@@ -1,11 +1,15 @@
 name: Android CI - Assemble
 
 on:
+  workflow_dispatch:    
   push:
-    branches: [ "android15-adapt" ]
+    branches:
+      - "android15-adapt"
+      - "master"
   pull_request:
-    branches: [ "android15-adapt" ]
-
+    branches:
+      - "android15-adapt"
+      - "master"
 jobs:
   build:
     name: Build (assembleDebug)
