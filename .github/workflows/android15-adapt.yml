@@ -1,0 +1,91 @@
+name: Android CI - Assemble
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - "android15-adapt"
+      - "master"
+  pull_request:
+    branches:
+      - "android15-adapt"
+      - "master"
+
+jobs:
+  build:
+    name: Build (assembleDebug)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        id: setup-java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Cache Gradle packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper/
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      - name: Install Android SDK commandline tools and platforms
+        env:
+          ANDROID_SDK_ROOT: ${{ runner.temp }}/android-sdk
+          JAVA_HOME: ${{ steps.setup-java.outputs.java-home }}
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y wget unzip
+          mkdir -p $ANDROID_SDK_ROOT/cmdline-tools
+          cd $ANDROID_SDK_ROOT/cmdline-tools
+          wget -q https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip -O cmdline.zip
+          unzip -q cmdline.zip -d latest
+          # sdkmanager is under latest/cmdline-tools/bin or latest/cmdline-tools/<version>/bin depending on package
+          if [ -x "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" ]; then
+            SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          elif [ -x "$ANDROID_SDK_ROOT/cmdline-tools/latest/cmdline-tools/bin/sdkmanager" ]; then
+            SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/cmdline-tools/bin/sdkmanager"
+          else
+            # find any sdkmanager
+            SDKMANAGER=$(find $ANDROID_SDK_ROOT/cmdline-tools -type f -name sdkmanager | head -n 1 || true)
+          fi
+          if [ -z "$SDKMANAGER" ] || [ ! -x "$SDKMANAGER" ]; then
+            echo "sdkmanager not found or not executable: $SDKMANAGER"
+            ls -R $ANDROID_SDK_ROOT/cmdline-tools || true
+            exit 127
+          fi
+          export PATH=$(dirname "$SDKMANAGER"):$PATH
+          echo "Using sdkmanager: $SDKMANAGER"
+          yes | "$SDKMANAGER" --sdk_root=$ANDROID_SDK_ROOT --licenses
+          "$SDKMANAGER" --sdk_root=$ANDROID_SDK_ROOT "platform-tools" "platforms;android-35" "build-tools;33.0.2" "cmdline-tools;latest"
+
+      - name: Set Android env vars
+        run: |
+          echo "ANDROID_SDK_ROOT=${{ runner.temp }}/android-sdk" >> $GITHUB_ENV
+          echo "ANDROID_HOME=${{ runner.temp }}/android-sdk" >> $GITHUB_ENV
+          echo "PATH=${{ runner.temp }}/android-sdk/platform-tools:${PATH}" >> $GITHUB_ENV
+
+      - name: Verify Gradle wrapper
+        run: ./gradlew --version
+
+      - name: Assemble Debug APK
+        run: ./gradlew clean assembleDebug --stacktrace --no-daemon
+        env:
+          JAVA_HOME: ${{ steps.setup-java.outputs.java-home }}
+          ANDROID_SDK_ROOT: ${{ runner.temp }}/android-sdk
+
+      - name: Upload build artifacts
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-debug-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
