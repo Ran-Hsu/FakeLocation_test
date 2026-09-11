@@ -70,6 +70,6 @@ dependencies {
     // Integration with observables
     implementation "androidx.compose.runtime:runtime-livedata:$compose_version"
 
-    // Align Xposed API to requested minversion (change if your runtime requires different version)
-    compileOnly 'de.robv.android.xposed:api:93'
+    // Use Xposed/Vector shim API 102 for runtime (vector 2.2 / api102)
+    compileOnly 'de.robv.android.xposed:api:102'
 }
