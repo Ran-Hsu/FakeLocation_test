@@ -27,6 +27,7 @@ import de.robv.android.xposed.callbacks.XC_LoadPackage;
 
 /**
  * Created by lin on 2017/7/23.
+ * Hardened for newer Android: pre-check classes/methods before hooking to avoid crashing target processes
  */
 
 public class LocationHook {
@@ -39,19 +40,20 @@ public class LocationHook {
         LocationConfig.setLatitude(latitude);
         LocationConfig.setLongitude(longitude);
 
-        hookMethod(WifiManager.class, "getScanResults", XC_MethodReplacement.returnConstant(Collections.emptyList()));
-        hookMethod(WifiInfo.class, "getMacAddress", XC_MethodReplacement.returnConstant("02:00:00:00:00:00"));
-        hookMethod(WifiInfo.class, "getSSID", XC_MethodReplacement.returnConstant("<unknown ssid>"));
-        hookMethod(WifiInfo.class, "getBSSID", XC_MethodReplacement.returnConstant("02:00:00:00:00:00"));
+        // Use safe wrapper methods that verify class/method existence and guard with try/catch
+        safeHookMethod(WifiManager.class, "getScanResults", XC_MethodReplacement.returnConstant(Collections.emptyList()));
+        safeHookMethod(WifiInfo.class, "getMacAddress", XC_MethodReplacement.returnConstant("02:00:00:00:00:00"));
+        safeHookMethod(WifiInfo.class, "getSSID", XC_MethodReplacement.returnConstant("<unknown ssid>"));
+        safeHookMethod(WifiInfo.class, "getBSSID", XC_MethodReplacement.returnConstant("02:00:00:00:00:00"));
 
-        hookMethods("android.location.LocationManager", "requestLocationUpdates", new XC_MethodHook() {
+        safeHookMethods("android.location.LocationManager", "requestLocationUpdates", new XC_MethodHook() {
             @Override
             protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
                 LocationHandler.getInstance().start();
             }
         });
 
-        hookMethod("android.location.LocationManager", mLpp.classLoader, "getLastLocation", new XC_MethodHook() {
+        safeHookMethod("android.location.LocationManager", mLpp.classLoader, "getLastLocation", new XC_MethodHook() {
             @Override
             protected void afterHookedMethod(MethodHookParam param) throws Throwable {
                 Location loc = (Location) param.getResult();
@@ -62,7 +64,7 @@ public class LocationHook {
             }
         });
 
-        hookMethods("android.location.LocationManager", "getLastKnownLocation", new XC_MethodHook() {
+        safeHookMethods("android.location.LocationManager", "getLastKnownLocation", new XC_MethodHook() {
             @Override
             protected void afterHookedMethod(MethodHookParam param) throws Throwable {
                 Location loc = (Location) param.getResult();
@@ -73,20 +75,21 @@ public class LocationHook {
             }
         });
 
-        hookMethod(Location.class, "getLatitude", new XC_MethodReplacement() {
+        safeHookMethod(Location.class, "getLatitude", new XC_MethodReplacement() {
             @Override
             protected Object replaceHookedMethod(MethodHookParam param) throws Throwable {
                 return LocationConfig.getLatitude();
             }
         });
-        hookMethod(Location.class, "getLongitude", new XC_MethodReplacement() {
+        safeHookMethod(Location.class, "getLongitude", new XC_MethodReplacement() {
             @Override
             protected Object replaceHookedMethod(MethodHookParam param) throws Throwable {
                 return LocationConfig.getLongitude();
             }
         });
-        hookMethod(LocationManager.class, "getBestProvider", Criteria.class, boolean.class, XC_MethodReplacement.returnConstant("gps"));
-        hookMethod(LocationManager.class, "isProviderEnabled", String.class, new XC_MethodHook() {
+
+        safeHookMethod(LocationManager.class, "getBestProvider", Criteria.class, boolean.class, XC_MethodReplacement.returnConstant("gps"));
+        safeHookMethod(LocationManager.class, "isProviderEnabled", String.class, new XC_MethodHook() {
             @Override
             protected void beforeHookedMethod(MethodHookParam param) throws Throwable {
                 Log.d(TAG, "isProviderEnabled: " + param.args[0]);
@@ -95,63 +98,96 @@ public class LocationHook {
             }
         });
 
-        hookMethod(TelephonyManager.class, "getNeighboringCellInfo", XC_MethodReplacement.returnConstant(null));
+        safeHookMethod(TelephonyManager.class, "getNeighboringCellInfo", XC_MethodReplacement.returnConstant(null));
 
         int ac = (int) lac;
         int ci = cid > Integer.MAX_VALUE ? -1 : (int) cid;
 
-        hookMethod(GsmCellLocation.class, "getLac", XC_MethodReplacement.returnConstant(ac));
-        hookMethod(GsmCellLocation.class, "getCid", XC_MethodReplacement.returnConstant(ci));
+        safeHookMethod(GsmCellLocation.class, "getLac", XC_MethodReplacement.returnConstant(ac));
+        safeHookMethod(GsmCellLocation.class, "getCid", XC_MethodReplacement.returnConstant(ci));
 
         // 2G
-        hookMethod(CellIdentityGsm.class, "getLac", XC_MethodReplacement.returnConstant(ac));
-        hookMethod(CellIdentityGsm.class, "getCid", XC_MethodReplacement.returnConstant(ci));
+        safeHookMethod(CellIdentityGsm.class, "getLac", XC_MethodReplacement.returnConstant(ac));
+        safeHookMethod(CellIdentityGsm.class, "getCid", XC_MethodReplacement.returnConstant(ci));
 
         // 3G
-        hookMethod(CellIdentityWcdma.class, "getLac", XC_MethodReplacement.returnConstant(ac));
-        hookMethod(CellIdentityWcdma.class, "getCid", XC_MethodReplacement.returnConstant(ci));
+        safeHookMethod(CellIdentityWcdma.class, "getLac", XC_MethodReplacement.returnConstant(ac));
+        safeHookMethod(CellIdentityWcdma.class, "getCid", XC_MethodReplacement.returnConstant(ci));
 
         // 4G
-        hookMethod(CellIdentityLte.class, "getTac", XC_MethodReplacement.returnConstant(ac));
-        hookMethod(CellIdentityLte.class, "getCi", XC_MethodReplacement.returnConstant(ci));
+        safeHookMethod(CellIdentityLte.class, "getTac", XC_MethodReplacement.returnConstant(ac));
+        safeHookMethod(CellIdentityLte.class, "getCi", XC_MethodReplacement.returnConstant(ci));
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            // 3G
-            hookMethod(CellIdentityTdscdma.class, "getLac", XC_MethodReplacement.returnConstant(ac));
-            hookMethod(CellIdentityTdscdma.class, "getCid", XC_MethodReplacement.returnConstant(ci));
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P && classExists("android.telephony.CellIdentityTdscdma")) {
+            safeHookMethod(CellIdentityTdscdma.class, "getLac", XC_MethodReplacement.returnConstant(ac));
+            safeHookMethod(CellIdentityTdscdma.class, "getCid", XC_MethodReplacement.returnConstant(ci));
         }
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            // 5G
-            hookMethod(CellIdentityNr.class, "getTac", XC_MethodReplacement.returnConstant(ac));
-            hookMethod(CellIdentityNr.class, "getNci", XC_MethodReplacement.returnConstant(cid));
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && classExists("android.telephony.CellIdentityNr")) {
+            safeHookMethod(CellIdentityNr.class, "getTac", XC_MethodReplacement.returnConstant(ac));
+            safeHookMethod(CellIdentityNr.class, "getNci", XC_MethodReplacement.returnConstant(cid));
         }
     }
 
-    //不带参数的方法拦截
-    private static void hookMethod(Class<?> clazz, String methodName, Object... parameterTypesAndCallback) {
+    // Safe wrappers and helpers
+
+    private static boolean classExists(String className) {
         try {
+            Class.forName(className);
+            return true;
+        } catch (Throwable t) {
+            Log.d(TAG, "Class not found: " + className + " -> " + t);
+            return false;
+        }
+    }
+
+    private static boolean methodExists(Class<?> clazz, String methodName, Class<?>... paramTypes) {
+        try {
+            clazz.getMethod(methodName, paramTypes);
+            return true;
+        } catch (Throwable t) {
+            Log.d(TAG, "Method not found: " + clazz + "#" + methodName + " -> " + t);
+            return false;
+        }
+    }
+
+    // Wrapper for hooking methods on Class objects
+    private static void safeHookMethod(Class<?> clazz, String methodName, Object... parameterTypesAndCallback) {
+        if (clazz == null) {
+            Log.d(TAG, "safeHookMethod: clazz is null for method " + methodName);
+            return;
+        }
+        try {
+            // Optional: check method existence if we can determine parameter types (best-effort)
             XposedHelpers.findAndHookMethod(clazz, methodName, parameterTypesAndCallback);
         } catch (Throwable e) {
-            Log.d(TAG, e.toString());
+            Log.d(TAG, "safeHookMethod failed for " + clazz.getName() + "#" + methodName + " -> " + e);
         }
     }
 
-    //不带参数的方法拦截
-    private static void hookMethod(String className, ClassLoader classLoader, String methodName,
-                                   Object... parameterTypesAndCallback) {
+    // Wrapper for hooking methods by class name + ClassLoader
+    private static void safeHookMethod(String className, ClassLoader classLoader, String methodName, Object... parameterTypesAndCallback) {
+        if (className == null) return;
         try {
-            XposedHelpers.findAndHookMethod(className, classLoader, methodName, parameterTypesAndCallback);
+            Class<?> clazz = Class.forName(className, false, classLoader);
+            if (clazz == null) {
+                Log.d(TAG, "safeHookMethod: class not found by name: " + className);
+                return;
+            }
+            XposedHelpers.findAndHookMethod(clazz, methodName, parameterTypesAndCallback);
         } catch (Throwable e) {
-            Log.d(TAG, e.toString());
+            Log.d(TAG, "safeHookMethod by name failed for " + className + "#" + methodName + " -> " + e);
         }
     }
 
-    //带参数的方法拦截
-    private static void hookMethods(String className, String methodName, XC_MethodHook xmh) {
+    // Wrapper that only hooks if the named class is present in the boot/classloader
+    private static void safeHookMethods(String className, String methodName, XC_MethodHook xmh) {
         try {
+            if (!classExists(className)) {
+                Log.d(TAG, "safeHookMethods: class " + className + " not present; skipping hook for " + methodName);
+                return;
+            }
             Class<?> clazz = Class.forName(className);
-
             for (Method method : clazz.getDeclaredMethods())
                 if (method.getName().equals(methodName)
                         && !Modifier.isAbstract(method.getModifiers())
@@ -159,8 +195,7 @@ public class LocationHook {
                     XposedBridge.hookMethod(method, xmh);
                 }
         } catch (Throwable e) {
-            Log.d(TAG, e.toString());
+            Log.d(TAG, "safeHookMethods failed for " + className + "#" + methodName + " -> " + e);
         }
     }
-
 }
